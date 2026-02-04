@@ -1,0 +1,160 @@
+Below is a clean, reusable Ansible automation that generates Bootstrap + Master ISOs using coreos-installer iso customize, exactly matching the commands you ran manually.
+
+This is suitable for OpenShift UPI / Agent-based / Static (none platform) installs like the one you’re doing.
+
+
+---
+
+📁 Recommended Directory Layout
+
+ocp-isoMNO/
+├── playbook-generate-isos.yml
+├── vars.yml
+├── files/
+│   ├── coreos-installer
+│   ├── rhcos-418.94.202508060022-0-live.x86_64.iso
+│   ├── boot-enp0s8.nmconnection
+│   ├── m1-ens1f0.nmconnection
+│   ├── m2-ens1f0.nmconnection
+│   ├── m3-ens1f0.nmconnection
+├── ignitions/
+│   ├── bootstrap.ign
+│   └── master.ign
+└── output/
+
+
+---
+
+📌 vars.yml
+
+# vars.yml
+dest_device: /dev/sda
+
+rhcos_iso: rhcos-418.94.202508060022-0-live.x86_64.iso
+
+coreos_installer: coreos-installer
+
+ignition_dir: ignitions
+nmconnection_dir: files
+output_dir: output
+
+nodes:
+  - name: bootstrap
+    ignition: bootstrap.ign
+    nmconnection: boot-enp0s8.nmconnection
+    output_iso: bootstrap.iso
+
+  - name: master1
+    ignition: master.ign
+    nmconnection: m1-ens1f0.nmconnection
+    output_iso: master1.iso
+
+  - name: master2
+    ignition: master.ign
+    nmconnection: m2-ens1f0.nmconnection
+    output_iso: master2.iso
+
+  - name: master3
+    ignition: master.ign
+    nmconnection: m3-ens1f0.nmconnection
+    output_iso: master3.iso
+
+
+---
+
+▶️ playbook-generate-isos.yml
+
+---
+- name: Generate OpenShift RHCOS customized ISOs
+  hosts: localhost
+  become: false
+  vars_files:
+    - vars.yml
+
+  tasks:
+
+    - name: Ensure output directory exists
+      file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Ensure coreos-installer is executable
+      file:
+        path: "{{ coreos_installer }}"
+        mode: '0755'
+
+    - name: Generate ISOs for Bootstrap and Masters
+      command: >
+        ./{{ coreos_installer }} iso customize
+        --dest-device {{ dest_device }}
+        --dest-ignition {{ ignition_dir }}/{{ item.ignition }}
+        --network-keyfile {{ nmconnection_dir }}/{{ item.nmconnection }}
+        -o {{ output_dir }}/{{ item.output_iso }}
+        {{ rhcos_iso }}
+      args:
+        chdir: "{{ playbook_dir }}"
+      loop: "{{ nodes }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: iso_creation
+
+    - name: Show ISO creation output
+      debug:
+        var: iso_creation.results
+
+
+---
+
+▶️ Run the Playbook
+
+ansible-playbook playbook-generate-isos.yml
+
+
+---
+
+✅ Output
+
+output/
+├── bootstrap.iso
+├── master1.iso
+├── master2.iso
+└── master3.iso
+
+Each ISO will:
+
+Auto-install to /dev/sda
+
+Use the correct Ignition
+
+Apply the correct static network config
+
+Require no confirmation at boot
+
+
+
+---
+
+🔥 Optional Enhancements (Can add next)
+
+SHA256 checksum generation
+
+HTTP copy to /var/www/html/iso/
+
+Redfish / iLO virtual media attach
+
+Day-2 worker ISO generation
+
+Full Day-0 + Day-2 Ansible role structure
+
+
+If you want, I can:
+
+Convert this into an Ansible role
+
+Add iLO/Redfish automation
+
+Integrate with your HAProxy + DHCP + DNS
+
+
+Just tell me 👍
