@@ -1,0 +1,63 @@
+Here's the typical setup for running Ansible inside a Podman execution environment with ansible-navigator.
+
+**1. Install Podman and ansible-navigator**
+```bash
+# RHEL/Fedora
+sudo dnf install podman
+# Ubuntu/Debian
+sudo apt install podman
+
+pip3 install 'ansible-navigator[ansible-core]'
+```
+
+**2. Pull an execution environment image**
+```bash
+# Community image (no subscription needed)
+podman pull ghcr.io/ansible/community-ansible-dev-tools:latest
+# or the minimal one
+podman pull quay.io/ansible/creator-ee:latest
+
+# Red Hat supported (requires registry.redhat.io login)
+podman login registry.redhat.io
+podman pull registry.redhat.io/ansible-automation-platform-25/ee-supported-rhel9:latest
+```
+
+**3. Create `ansible-navigator.yml` in your project directory**
+```yaml
+---
+ansible-navigator:
+  execution-environment:
+    enabled: true
+    container-engine: podman
+    image: ghcr.io/ansible/community-ansible-dev-tools:latest
+    pull:
+      policy: missing          # don't re-pull every run
+    volume-mounts:             # expose extra host paths if needed
+      - src: ~/.ssh
+        dest: /root/.ssh
+        options: Z
+    environment-variables:
+      pass:                    # forward host env vars into the container
+        - SSH_AUTH_SOCK
+  mode: stdout                 # or 'interactive' for the TUI
+  playbook-artifact:
+    enable: false              # skip writing JSON run artifacts
+  logging:
+    level: warning
+```
+
+**4. Verify and run**
+```bash
+ansible-navigator images            # confirm the EE is detected
+ansible-navigator config            # see effective ansible.cfg inside the EE
+ansible-navigator run site.yml -i inventory.yml
+```
+
+**Things that trip people up**
+- **SSH keys:** your project dir is auto-mounted, but `~/.ssh` isn't. Either mount it (as above) or use an ssh-agent and pass `SSH_AUTH_SOCK`.
+- **Vault passwords / secrets:** pass via `environment-variables: set:` or `extra-args: ["--vault-password-file", "./vault.pass"]` with the file inside the project dir.
+- **SELinux:** add the `:Z` option on volume mounts or you'll get permission denied.
+- **Rootless Podman:** works fine; it's the recommended mode. If you see "no space left" or cgroup errors, run `podman system reset` or check `subuid`/`subgid` entries for your user.
+- **Local `ansible.cfg`** in the project dir is honored since the project is mounted at the same path inside the container.
+
+If you need collections or Python libs that aren't in the base image, the next step is building a custom EE with `ansible-builder` — happy to walk through that if that's where you're headed.
